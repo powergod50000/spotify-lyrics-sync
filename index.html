@@ -346,7 +346,8 @@ async function loadLrcFromGithub(track) {
         rawCandidates
             .filter(Boolean)
             .map(name => name.trim())
-            .map(name => name.toLowerCase())
+    ));
+
     ));
 
     let lrcText = null;
@@ -589,3 +590,4 @@ document.getElementById("queueBtn").onclick = loadQueue;
 
 </body>
 </html>
+
