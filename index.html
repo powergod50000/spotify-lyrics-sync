@@ -2,23 +2,79 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Spotify Auto Lyrics App</title>
+<title>Spotify Auto Lyrics + Karaoke</title>
+
 <style>
-    body { background:#111; color:#eee; font-family:sans-serif; padding:20px; }
-    button { background:#1db954; border:none; color:white; padding:10px 20px;
-             border-radius:6px; cursor:pointer; margin-bottom:10px; }
-    #lyrics span { display:block; padding:3px 0; }
-    .activeLine { color:#1db954; font-weight:bold; }
-    #queueBox { background:#222; padding:10px; border-radius:6px; margin-top:20px; display:none; }
+    :root {
+        --bg: #111;
+        --text: #eee;
+        --accent: #1db954;
+    }
+    body.light {
+        --bg: #fafafa;
+        --text: #111;
+    }
+    body {
+        background: var(--bg);
+        color: var(--text);
+        font-family: sans-serif;
+        padding: 20px;
+        transition: background 0.3s, color 0.3s;
+    }
+
+    button {
+        background: var(--accent);
+        color:white;
+        border:none;
+        padding:10px 20px;
+        border-radius:6px;
+        cursor:pointer;
+    }
+    #lyrics span {
+        display:block;
+        padding:3px 0;
+        font-size:18px;
+        transition: color 0.2s;
+    }
+    .activeLine {
+        color: var(--accent);
+        font-weight:bold;
+        font-size:20px;
+    }
+    #queueBox {
+        background:#222;
+        padding:10px;
+        border-radius:6px;
+        margin-top:20px;
+        display:none;
+    }
+    body.light #queueBox {
+        background:#dcdcdc;
+    }
+
+    #controls {
+        margin-top:20px;
+    }
+    #controls button {
+        margin-right:10px;
+    }
 </style>
 </head>
 
 <body>
 
-<h1>Spotify Auto Lyrics</h1>
+<h1>Spotify Auto Lyrics + Karaoke</h1>
 
 <button id="loginBtn">Connect Spotify</button>
+<button id="themeBtn">Toggle Theme</button>
 <button id="queueBtn" style="display:none;">Show Queue</button>
+
+<div id="controls" style="display:none;">
+    <button onclick="spCommand('previous')">⏮</button>
+    <button onclick="spCommand('pause')">⏸</button>
+    <button onclick="spCommand('play')">▶</button>
+    <button onclick="spCommand('next')">⏭</button>
+</div>
 
 <h2>Lyrics</h2>
 <div id="lyrics">No lyrics loaded yet.</div>
@@ -29,190 +85,137 @@
 </div>
 
 <script>
-/* ------------------------------ CONFIG ------------------------------ */
-
+/* ----------------------------------------------------
+   CONFIG
+---------------------------------------------------- */
 const CLIENT_ID = "a079b5566fff4c44b77ed45589888e1d";
 const GENIUS_TOKEN = "hHrPpZvpq0eUFbSrf7uGqYx0bs1FqHxjVCsryeiOL6Ejx4I8f0yUicUIsZ7x3W9z";
 const REDIRECT_URI = "https://spotify-lyrics-sync-tawny.vercel.app/";
-const SCOPES = "user-read-playback-state user-read-currently-playing";
+const SCOPES = "user-read-playback-state user-read-currently-playing user-modify-playback-state";
 
-/* --------------------------- PKCE FUNCTIONS --------------------------- */
+let timestamps = []; 
+let fallbackTiming = [];
+let lyricsLines = [];
 
-function generateRandomString(length) {
+/* ----------------------------------------------------
+   THEME TOGGLE
+---------------------------------------------------- */
+document.getElementById("themeBtn").onclick = () => {
+    document.body.classList.toggle("light");
+    localStorage.setItem("theme", document.body.classList.contains("light") ? "light" : "dark");
+};
+
+if (localStorage.getItem("theme") === "light") {
+    document.body.classList.add("light");
+}
+
+/* ----------------------------------------------------
+   PKCE HELPERS
+---------------------------------------------------- */
+function randomStr(len) {
     const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-    let str = "";
-    for (let i=0;i<length;i++) str += chars.charAt(Math.floor(Math.random()*chars.length));
-    return str;
+    return [...Array(len)].map(()=>chars[Math.floor(Math.random()*chars.length)]).join("");
 }
 
 async function sha256(str) {
     return crypto.subtle.digest("SHA-256", new TextEncoder().encode(str));
 }
 
-function base64url(buffer) {
-    return btoa(String.fromCharCode(...new Uint8Array(buffer)))
+function base64url(buf) {
+    return btoa(String.fromCharCode(...new Uint8Array(buf)))
         .replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");
 }
 
-async function createCodeChallenge(v) {
+async function createChallenge(v) {
     return base64url(await sha256(v));
 }
 
-/* ------------------------------- LOGIN ------------------------------- */
-
+/* ----------------------------------------------------
+   LOGIN
+---------------------------------------------------- */
 async function login() {
-    const verifier = generateRandomString(128);
+    const verifier = randomStr(128);
     localStorage.setItem("code_verifier", verifier);
 
-    const challenge = await createCodeChallenge(verifier);
+    const challenge = await createChallenge(verifier);
 
     const params = new URLSearchParams({
-        response_type:"code",
-        client_id:CLIENT_ID,
-        redirect_uri:REDIRECT_URI,
-        scope:SCOPES,
-        code_challenge_method:"S256",
-        code_challenge:challenge
+        response_type: "code",
+        client_id: CLIENT_ID,
+        redirect_uri: REDIRECT_URI,
+        scope: SCOPES,
+        code_challenge_method: "S256",
+        code_challenge: challenge
     });
 
     window.location = "https://accounts.spotify.com/authorize?" + params;
 }
 
-/* ---------------------- TOKEN EXCHANGE & REFRESH ---------------------- */
-
+/* ----------------------------------------------------
+   TOKEN EXCHANGE & REFRESH
+---------------------------------------------------- */
 async function exchangeCode(code) {
     const verifier = localStorage.getItem("code_verifier");
 
     const body = new URLSearchParams({
         grant_type:"authorization_code",
-        code, redirect_uri:REDIRECT_URI,
-        client_id:CLIENT_ID,
-        code_verifier:verifier
+        code,
+        redirect_uri: REDIRECT_URI,
+        client_id: CLIENT_ID,
+        code_verifier: verifier
     });
 
     const data = await fetch("https://accounts.spotify.com/api/token", {
         method:"POST",
-        headers:{ "Content-Type":"application/x-www-form-urlencoded" },
+        headers:{ "Content-Type": "application/x-www-form-urlencoded" },
         body
-    }).then(r=>r.json());
+    }).then(r => r.json());
 
+    saveToken(data);
+}
+
+function saveToken(data) {
     localStorage.setItem("access_token", data.access_token);
-    localStorage.setItem("expires_at", Date.now() + data.expires_in*1000);
-    localStorage.setItem("refresh_token", data.refresh_token);
+    localStorage.setItem("expires_at", Date.now() + data.expires_in * 1000);
+    if (data.refresh_token) {
+        localStorage.setItem("refresh_token", data.refresh_token);
+    }
 }
 
 async function getToken() {
-    const t = localStorage.getItem("access_token");
+    const access = localStorage.getItem("access_token");
     const exp = Number(localStorage.getItem("expires_at"));
 
-    if (t && Date.now() < exp) return t;
+    if (access && Date.now() < exp) return access;
 
     const refresh = localStorage.getItem("refresh_token");
     if (!refresh) return null;
 
     const body = new URLSearchParams({
         grant_type:"refresh_token",
-        refresh_token:refresh,
-        client_id:CLIENT_ID
+        refresh_token: refresh,
+        client_id: CLIENT_ID
     });
 
     const data = await fetch("https://accounts.spotify.com/api/token", {
-        method:"POST", headers:{ "Content-Type":"application/x-www-form-urlencoded" }, body
+        method:"POST",
+        headers:{ "Content-Type": "application/x-www-form-urlencoded" },
+        body
     }).then(r=>r.json());
 
-    localStorage.setItem("access_token", data.access_token);
-    localStorage.setItem("expires_at", Date.now() + data.expires_in*1000);
-
+    saveToken(data);
     return data.access_token;
 }
 
-/* --------------------------- SPOTIFY HELPERS --------------------------- */
-
-async function sp(endpoint) {
+/* ----------------------------------------------------
+   SPOTIFY API WRAPPER
+---------------------------------------------------- */
+async function sp(endpoint, method = "GET", body = null) {
     const token = await getToken();
+    if (!token) return null;
+
     return fetch("https://api.spotify.com/v1/" + endpoint, {
-        headers:{ Authorization:"Bearer " + token }
-    }).then(r=>r.json());
-}
-
-/* -------------------------- GENIUS SEARCH -------------------------- */
-
-async function fetchLyrics(song, artist) {
-    const searchUrl = `https://api.genius.com/search?q=${encodeURIComponent(song + " " + artist)}`;
-
-    const search = await fetch(searchUrl, {
-        headers: { Authorization: "Bearer " + GENIUS_TOKEN }
-    }).then(r => r.json());
-
-    if (!search.response.hits.length) return "No lyrics found.";
-
-    const lyricPage = search.response.hits[0].result.url;
-
-    // Call Vercel backend scraper
-    const scraped = await fetch(`/api/lyrics.js?url=${encodeURIComponent(lyricPage)}`)
-        .then(r=>r.json());
-
-    return scraped.lyrics || "No lyrics found.";
-}
-
-/* ----------------------- DISPLAY AUTO LYRICS ----------------------- */
-
-async function loadLyrics() {
-    const playback = await sp("me/player/currently-playing");
-    if (!playback || !playback.item) return;
-
-    const title = playback.item.name;
-    const artist = playback.item.artists[0].name;
-
-    const lyricText = await fetchLyrics(title, artist);
-
-    const out = document.getElementById("lyrics");
-    out.innerHTML = "";
-    lyricText.split("\n").forEach(line => {
-        const span = document.createElement("span");
-        span.textContent = line;
-        out.appendChild(span);
-    });
-}
-
-/* ----------------------------- QUEUE ----------------------------- */
-
-async function loadQueue() {
-    const data = await sp("me/player/queue");
-    const box = document.getElementById("queueBox");
-    const q = document.getElementById("queue");
-
-    q.innerHTML = "";
-    data.queue.forEach(track => {
-        const div = document.createElement("div");
-        div.textContent = track.name + " — " + track.artists.map(a=>a.name).join(", ");
-        q.appendChild(div);
-    });
-
-    box.style.display = "block";
-}
-
-/* ------------------------- HANDLE REDIRECT ------------------------- */
-
-(async function() {
-    const params = new URLSearchParams(window.location.search);
-    const code = params.get("code");
-
-    if (code) {
-        await exchangeCode(code);
-        window.history.replaceState({}, "", REDIRECT_URI);
-
-        document.getElementById("queueBtn").style.display = "inline-block";
-
-        await loadLyrics();
-    }
-})();
-
-/* ----------------------------- EVENTS ----------------------------- */
-
-document.getElementById("loginBtn").onclick = login;
-document.getElementById("queueBtn").onclick = loadQueue;
-</script>
-
-</body>
-</html>
+        method,
+        headers: {
+            Authorization: "Bearer " + token,
+            "Content-Type": "appli
