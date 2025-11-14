@@ -238,11 +238,19 @@ async function spCommand(cmd) {
    GENIUS LYRICS FETCH
 ---------------------------------------------------- */
 async function fetchLyrics(title, artist) {
-    const searchUrl = `https://api.genius.com/search?q=${encodeURIComponent(title + " " + artist)}`;
+  const res = await fetch(
+    `/api/lyrics?title=${encodeURIComponent(title)}&artist=${encodeURIComponent(artist)}`
+  );
 
-    const search = await fetch(searchUrl, {
-        headers: { Authorization: "Bearer " + GENIUS_TOKEN }
-    }).then(r => r.json());
+  if (!res.ok) {
+    console.error("Lyrics API error", res.status);
+    return "No lyrics found.";
+  }
+
+  const data = await res.json();
+  return data.lyrics || "No lyrics found.";
+}
+
 
     if (!search.response.hits.length) return "No lyrics found.";
 
@@ -356,4 +364,5 @@ document.getElementById("queueBtn").onclick = loadQueue;
 
 </body>
 </html>
+
 
