@@ -218,4 +218,140 @@ async function sp(endpoint, method = "GET", body = null) {
         method,
         headers: {
             Authorization: "Bearer " + token,
-            "Content-Type": "appli
+            "Content-Type": "application/json"
+        },
+        body: body ? JSON.stringify(body) : null
+    }).then(r => r.json());
+}
+
+/* ----------------------------------------------------
+   PLAYBACK CONTROLS
+---------------------------------------------------- */
+async function spCommand(cmd) {
+    if (cmd === "next") await sp("me/player/next", "POST");
+    if (cmd === "previous") await sp("me/player/previous", "POST");
+    if (cmd === "pause") await sp("me/player/pause", "PUT");
+    if (cmd === "play") await sp("me/player/play", "PUT");
+}
+
+/* ----------------------------------------------------
+   GENIUS LYRICS FETCH
+---------------------------------------------------- */
+async function fetchLyrics(title, artist) {
+    const searchUrl = `https://api.genius.com/search?q=${encodeURIComponent(title + " " + artist)}`;
+
+    const search = await fetch(searchUrl, {
+        headers: { Authorization: "Bearer " + GENIUS_TOKEN }
+    }).then(r => r.json());
+
+    if (!search.response.hits.length) return "No lyrics found.";
+
+    const pageUrl = search.response.hits[0].result.url;
+
+    const scraped = await fetch(`/api/lyrics.js?url=${encodeURIComponent(pageUrl)}`)
+        .then(r => r.json());
+
+    return scraped.lyrics || "Lyrics unavailable.";
+}
+
+/* ----------------------------------------------------
+   LOAD LYRICS
+---------------------------------------------------- */
+async function loadLyrics() {
+    const now = await sp("me/player/currently-playing");
+    if (!now || !now.item) return;
+
+    const title = now.item.name;
+    const artist = now.item.artists[0].name;
+
+    const raw = await fetchLyrics(title, artist);
+    const container = document.getElementById("lyrics");
+
+    container.innerHTML = "";
+    lyricsLines = raw.split("\n").filter(l => l.trim() !== "");
+
+    lyricsLines.forEach((line, i) => {
+        const span = document.createElement("span");
+        span.textContent = line;
+        container.appendChild(span);
+    });
+
+    fallbackTiming = lyricsLines.map((_, i) =>
+        (now.item.duration_ms / lyricsLines.length) * i / 1000
+    );
+}
+
+/* ----------------------------------------------------
+   AUTO-HIGHLIGHT + AUTO-SCROLL
+---------------------------------------------------- */
+setInterval(async () => {
+    if (!lyricsLines.length) return;
+
+    const now = await sp("me/player/currently-playing");
+    if (!now || !now.progress_ms) return;
+
+    const current = now.progress_ms / 1000;
+
+    let idx = 0;
+    const timing = timestamps.length ? timestamps : fallbackTiming;
+
+    for (let i = 0; i < timing.length; i++) {
+        if (current >= timing[i]) idx = i;
+    }
+
+    const spans = document.querySelectorAll("#lyrics span");
+    spans.forEach(s => s.classList.remove("activeLine"));
+    if (spans[idx]) {
+        spans[idx].classList.add("activeLine");
+        spans[idx].scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+
+}, 900);
+
+/* ----------------------------------------------------
+   QUEUE VIEWER
+---------------------------------------------------- */
+async function loadQueue() {
+    const data = await sp("me/player/queue");
+
+    const box = document.getElementById("queueBox");
+    const q = document.getElementById("queue");
+    q.innerHTML = "";
+
+    data.queue.forEach(t => {
+        const d = document.createElement("div");
+        d.textContent = t.name + " — " + t.artists.map(a=>a.name).join(", ");
+        q.appendChild(d);
+    });
+
+    box.style.display = "block";
+}
+
+/* ----------------------------------------------------
+   HANDLE REDIRECT + AUTO-LOGIN
+---------------------------------------------------- */
+(async function() {
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get("code");
+
+    if (code) {
+        await exchangeCode(code);
+        window.history.replaceState({}, "", REDIRECT_URI);
+    }
+
+    const token = await getToken();
+    if (token) {
+        document.getElementById("loginBtn").style.display = "none";
+        document.getElementById("queueBtn").style.display = "inline-block";
+        document.getElementById("controls").style.display = "block";
+        loadLyrics();
+    }
+})();
+    
+document.getElementById("loginBtn").onclick = login;
+document.getElementById("queueBtn").onclick = loadQueue;
+
+</script>
+
+</body>
+</html>
