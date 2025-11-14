@@ -1,13 +1,67 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <meta charset="UTF-8" />
-  <title>Spotify Lyrics Sync (PKCE)</title>
+<meta charset="UTF-8" />
+<title>Spotify Lyrics Sync — Full App</title>
+<style>
+    body {
+        font-family: sans-serif;
+        background: #111;
+        color: #eee;
+        padding: 20px;
+        line-height: 1.5;
+    }
+    button {
+        padding: 10px 20px;
+        background: #1db954;
+        border: none;
+        border-radius: 5px;
+        color: white;
+        cursor: pointer;
+    }
+    #lyricsView span {
+        display: block;
+        padding: 3px 0;
+        font-size: 18px;
+    }
+    .activeLine {
+        color: #1db954;
+        font-weight: bold;
+    }
+    textarea {
+        width: 100%;
+        height: 150px;
+    }
+    #queueContainer {
+        margin-top: 20px;
+        padding: 10px;
+        background: #222;
+        border-radius: 8px;
+    }
+</style>
 </head>
-<body style="font-family: sans-serif; padding: 20px;">
+<body>
 
-<h1>Spotify Lyrics Sync — PKCE Auth</h1>
+<h1>Spotify Lyrics Sync — Full App</h1>
+
 <button id="loginBtn">Connect Spotify</button>
+<button id="queueBtn" style="margin-left:10px; display:none;">Show Queue</button>
+
+<div id="queueContainer" style="display:none;">
+    <h2>Upcoming Songs</h2>
+    <div id="queue"></div>
+</div>
+
+<h2>Paste Lyrics</h2>
+<textarea id="lyricsInput" placeholder="Paste your lyrics here..."></textarea>
+<br><br>
+<button id="buildBtn">Build Lyrics View</button>
+<button id="recordBtn" style="margin-left:10px;">Start Timing</button>
+
+<h2>Lyrics:</h2>
+<div id="lyricsView"></div>
+
+
 
 <script>
 /* --------------------------------------------------
@@ -15,33 +69,28 @@
 -------------------------------------------------- */
 const CLIENT_ID = "a079b5566fff4c44b77ed45589888e1d";
 const REDIRECT_URI = "https://spotify-lyrics-sync-tawny.vercel.app/";
-const SCOPES = "user-read-playback-state user-read-currently-playing";
+const SCOPES = "user-read-playback-state user-read-currently-playing user-modify-playback-state";
 
 /* --------------------------------------------------
    PKCE HELPERS
 -------------------------------------------------- */
 function generateRandomString(length) {
-  const possible = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-  let text = "";
-  for (let i = 0; i < length; i++) {
-    text += possible.charAt(Math.floor(Math.random() * possible.length));
-  }
-  return text;
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  let str = "";
+  for (let i = 0; i < length; i++) str += chars.charAt(Math.floor(Math.random() * chars.length));
+  return str;
 }
 
-async function sha256(plain) {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(plain);
+async function sha256(str) {
+  const data = new TextEncoder().encode(str);
   return window.crypto.subtle.digest("SHA-256", data);
 }
 
-function base64urlencode(a) {
-  let str = "";
-  const bytes = new Uint8Array(a);
-  for (let i = 0; i < bytes.byteLength; i++) {
-    str += String.fromCharCode(bytes[i]);
-  }
-  return btoa(str).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+function base64urlencode(buffer) {
+  let binary = "";
+  const bytes = new Uint8Array(buffer);
+  for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
 async function generateCodeChallenge(code_verifier) {
@@ -50,7 +99,7 @@ async function generateCodeChallenge(code_verifier) {
 }
 
 /* --------------------------------------------------
-   AUTH REDIRECT
+   LOGIN
 -------------------------------------------------- */
 async function beginLogin() {
   const code_verifier = generateRandomString(128);
@@ -71,12 +120,12 @@ async function beginLogin() {
 }
 
 /* --------------------------------------------------
-   TOKEN EXCHANGE
+   TOKEN EXCHANGE + REFRESH
 -------------------------------------------------- */
 async function exchangeCodeForToken(code) {
   const code_verifier = localStorage.getItem("code_verifier");
 
-  const formData = new URLSearchParams({
+  const body = new URLSearchParams({
     grant_type: "authorization_code",
     code,
     redirect_uri: REDIRECT_URI,
@@ -87,36 +136,27 @@ async function exchangeCodeForToken(code) {
   const res = await fetch("https://accounts.spotify.com/api/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: formData
+    body
   });
 
   const data = await res.json();
-
   if (data.access_token) {
     localStorage.setItem("access_token", data.access_token);
-    localStorage.setItem("refresh_token", data.refresh_token || "");
-    localStorage.setItem("expires_at", (Date.now() + (data.expires_in * 1000)).toString());
+    localStorage.setItem("refresh_token", data.refresh_token);
+    localStorage.setItem("expires_at", Date.now() + (data.expires_in * 1000));
   }
-
-  return data.access_token;
 }
 
-/* --------------------------------------------------
-   TOKEN REFRESH
--------------------------------------------------- */
 async function getAccessToken() {
   const token = localStorage.getItem("access_token");
-  const expires_at = localStorage.getItem("expires_at");
+  const expires_at = Number(localStorage.getItem("expires_at"));
 
-  if (token && Date.now() < Number(expires_at)) {
-    return token;
-  }
+  if (token && Date.now() < expires_at) return token;
 
-  // Need to refresh token
   const refresh_token = localStorage.getItem("refresh_token");
   if (!refresh_token) return null;
 
-  const formData = new URLSearchParams({
+  const body = new URLSearchParams({
     grant_type: "refresh_token",
     refresh_token,
     client_id: CLIENT_ID
@@ -125,39 +165,124 @@ async function getAccessToken() {
   const res = await fetch("https://accounts.spotify.com/api/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: formData
+    body
   });
 
   const data = await res.json();
+  localStorage.setItem("access_token", data.access_token);
+  localStorage.setItem("expires_at", Date.now() + (data.expires_in * 1000));
 
-  if (data.access_token) {
-    localStorage.setItem("access_token", data.access_token);
-    localStorage.setItem("expires_at", (Date.now() + (data.expires_in * 1000)).toString());
-    return data.access_token;
-  }
-
-  return null;
+  return data.access_token;
 }
 
 /* --------------------------------------------------
-   CHECK FOR SPOTIFY REDIRECT
+   HANDLE REDIRECT
 -------------------------------------------------- */
-(async function checkForRedirect() {
-  const urlParams = new URLSearchParams(window.location.search);
-  const code = urlParams.get("code");
-
+(async function checkRedirect() {
+  const params = new URLSearchParams(window.location.search);
+  const code = params.get("code");
   if (code) {
     await exchangeCodeForToken(code);
-    // Clean URL
     window.history.replaceState({}, "", REDIRECT_URI);
-    alert("Spotify Connected Successfully!");
+    alert("Spotify Connected!");
+    document.getElementById("queueBtn").style.display = "inline-block";
   }
 })();
 
 /* --------------------------------------------------
-   BUTTON
+   SPOTIFY API HELPERS
 -------------------------------------------------- */
-document.getElementById("loginBtn").addEventListener("click", beginLogin);
+async function spotifyGet(endpoint) {
+  const token = await getAccessToken();
+  const res = await fetch("https://api.spotify.com/v1/" + endpoint, {
+    headers: { Authorization: "Bearer " + token }
+  });
+  return res.json();
+}
+
+/* --------------------------------------------------
+   QUEUE VIEWER
+-------------------------------------------------- */
+async function showQueue() {
+  const data = await spotifyGet("me/player/queue");
+  const container = document.getElementById("queue");
+  container.innerHTML = "";
+
+  data.queue.forEach(track => {
+    const div = document.createElement("div");
+    div.textContent = track.name + " — " + track.artists.map(a => a.name).join(", ");
+    container.appendChild(div);
+  });
+
+  document.getElementById("queueContainer").style.display = "block";
+}
+
+/* --------------------------------------------------
+   LYRICS BUILDER
+-------------------------------------------------- */
+let lineTimes = [];
+let isRecording = false;
+let lines = [];
+
+document.getElementById("buildBtn").onclick = () => {
+  const input = document.getElementById("lyricsInput").value;
+  lines = input.split("\n").filter(l => l.trim().length > 0);
+  
+  const view = document.getElementById("lyricsView");
+  view.innerHTML = "";
+
+  lines.forEach((line, i) => {
+    const span = document.createElement("span");
+    span.textContent = line;
+    span.dataset.index = i;
+
+    span.onclick = async () => {
+      if (!isRecording) return;
+      const playback = await spotifyGet("me/player/currently-playing");
+      if (!playback || !playback.progress_ms) return;
+      lineTimes[i] = playback.progress_ms / 1000;
+      span.style.color = "#1db954";
+    };
+
+    view.appendChild(span);
+  });
+};
+
+/* --------------------------------------------------
+   RECORD TIMINGS
+-------------------------------------------------- */
+document.getElementById("recordBtn").onclick = () => {
+  isRecording = !isRecording;
+  document.getElementById("recordBtn").textContent = isRecording ? "Stop Timing" : "Start Timing";
+};
+
+/* --------------------------------------------------
+   AUTO-HIGHLIGHT LYRICS
+-------------------------------------------------- */
+setInterval(async () => {
+  if (!lines.length || !lineTimes.length) return;
+
+  const playback = await spotifyGet("me/player/currently-playing");
+  if (!playback || !playback.progress_ms) return;
+
+  const currentTime = playback.progress_ms / 1000;
+
+  let active = 0;
+  for (let i = 0; i < lineTimes.length; i++) {
+    if (currentTime >= lineTimes[i]) active = i;
+  }
+
+  [...document.querySelectorAll("#lyricsView span")].forEach((span, i) => {
+    span.classList.toggle("activeLine", i === active);
+  });
+
+}, 800);
+
+/* --------------------------------------------------
+   BUTTON LISTENERS
+-------------------------------------------------- */
+document.getElementById("loginBtn").onclick = beginLogin;
+document.getElementById("queueBtn").onclick = showQueue;
 
 </script>
 </body>
