@@ -1,6 +1,6 @@
 // api/lyrics.js
 
-const GENIUS_TOKEN = "hHrPpZvpq0eUFbSrf7uGqYx0bs1FqHxjVCsryeiOL6Ejx4I8f0yUicUIsZ7x3W9z";
+const AUDD_API_TOKEN = "f13f3510f68ecdbb925712078df293c9";
 
 module.exports = async (req, res) => {
   try {
@@ -11,89 +11,56 @@ module.exports = async (req, res) => {
       return;
     }
 
-    // 1) Search Genius
-    const searchUrl =
-      "https://api.genius.com/search?q=" +
-      encodeURIComponent(`${title} ${artist}`);
+    const query = `${title} ${artist}`;
 
-    const searchResp = await fetch(searchUrl, {
+    // Build POST body for AudD
+    const formData = new URLSearchParams({
+      api_token: AUDD_API_TOKEN,
+      method: "findLyrics",
+      q: query,
+    });
+
+    // Make request to AudD
+    const auddResp = await fetch("https://api.audd.io/", {
+      method: "POST",
       headers: {
-        Authorization: "Bearer " + GENIUS_TOKEN,
-        "User-Agent": "spotify-lyrics-sync/1.0"
+        "Content-Type": "application/x-www-form-urlencoded",
       },
+      body: formData,
     });
 
-    if (!searchResp.ok) {
-      const bodyText = await searchResp.text().catch(() => "");
-      res.status(searchResp.status).json({
-        error: "Genius search failed",
-        status: searchResp.status,
+    if (!auddResp.ok) {
+      const bodyText = await auddResp.text().catch(() => "");
+      res.status(auddResp.status).json({
+        error: "AudD request failed",
+        status: auddResp.status,
         body: bodyText.slice(0, 300),
       });
       return;
     }
 
-    const searchJson = await searchResp.json();
-    const hits = searchJson?.response?.hits || [];
+    const auddJson = await auddResp.json();
+    const results = auddJson.result || [];
 
-    if (!hits.length) {
-      res.status(404).json({ error: "No Genius hits for that song" });
+    if (!Array.isArray(results) || results.length === 0) {
+      res.status(404).json({ error: "No lyrics found in AudD" });
       return;
     }
 
-    const lyricPageUrl = hits[0].result.url;
+    const entry = results[0];
+    const lyrics = entry.lyrics;
 
-    // 2) Fetch the Genius lyrics page
-    const pageResp = await fetch(lyricPageUrl, {
-      headers: { "User-Agent": "spotify-lyrics-sync/1.0" },
-    });
-
-    if (!pageResp.ok) {
-      const bodyText = await pageResp.text().catch(() => "");
-      res.status(pageResp.status).json({
-        error: "Failed to fetch Genius page",
-        status: pageResp.status,
-        body: bodyText.slice(0, 300),
-      });
-      return;
-    }
-
-    const html = await pageResp.text();
-
-    // 3) Extract <div data-lyrics-container="true"> blocks
-    const blocks = html.match(
-      /<div[^>]+data-lyrics-container="true"[^>]*>[\s\S]*?<\/div>/g
-    );
-
-    if (!blocks || !blocks.length) {
-      res.status(404).json({ error: "No lyrics containers found on page" });
-      return;
-    }
-
-    const decodeEntities = (str) =>
-      str
-        .replace(/<br\s*\/?>/gi, "\n")
-        .replace(/&amp;/g, "&")
-        .replace(/&quot;/g, '"')
-        .replace(/&#39;/g, "'")
-        .replace(/&lt;/g, "<")
-        .replace(/&gt;/g, ">")
-        .replace(/&nbsp;/g, " ");
-
-    let lyrics = "";
-    for (const block of blocks) {
-      const textOnly = block.replace(/<[^>]+>/g, "");
-      lyrics += decodeEntities(textOnly).trim() + "\n\n";
-    }
-
-    if (!lyrics.trim()) {
-      res.status(404).json({ error: "Empty lyrics after parsing" });
+    if (!lyrics || !lyrics.trim()) {
+      res.status(404).json({ error: "Lyrics field empty in AudD result" });
       return;
     }
 
     res.status(200).json({ lyrics: lyrics.trim() });
   } catch (err) {
-    console.error("Lyrics API error:", err);
-    res.status(500).json({ error: "Server error", details: String(err) });
+    console.error("AudD Lyrics API error:", err);
+    res.status(500).json({
+      error: "Server error",
+      details: String(err),
+    });
   }
 };
