@@ -1,28 +1,63 @@
+// api/lyrics.js
+
+const GENIUS_TOKEN = "hHrPpZvpq0eUFbSrf7uGqYx0bs1FqHxjVCsryeiOL6Ejx4I8f0yUicUIsZ7x3W9z";
+
 module.exports = async (req, res) => {
   try {
-    const url = req.query.url;
-    if (!url) {
-      res.status(400).json({ error: "Missing Genius URL (?url=...)" });
+    const { title, artist } = req.query;
+
+    if (!title || !artist) {
+      res.status(400).json({ error: "Missing title or artist query params" });
       return;
     }
 
-    // Fetch the Genius page HTML
-    const response = await fetch(url);
-    if (!response.ok) {
-      res.status(500).json({ error: "Failed to fetch Genius page" });
+    // 1) Search Genius for the song
+    const searchUrl =
+      "https://api.genius.com/search?q=" +
+      encodeURIComponent(`${title} ${artist}`);
+
+    const searchResp = await fetch(searchUrl, {
+      headers: { Authorization: "Bearer " + GENIUS_TOKEN },
+    });
+
+    if (!searchResp.ok) {
+      res
+        .status(500)
+        .json({ error: "Genius search failed", status: searchResp.status });
       return;
     }
 
-    const html = await response.text();
+    const searchJson = await searchResp.json();
+    const hits = searchJson?.response?.hits || [];
 
-    // Grab all <div data-lyrics-container="true">...</div> blocks
-    const blocks = html.match(/<div[^>]+data-lyrics-container="true"[^>]*>[\s\S]*?<\/div>/g);
+    if (!hits.length) {
+      res.status(404).json({ error: "No Genius hits for that song" });
+      return;
+    }
+
+    const lyricPageUrl = hits[0].result.url;
+
+    // 2) Fetch the Genius lyrics page HTML
+    const pageResp = await fetch(lyricPageUrl);
+    if (!pageResp.ok) {
+      res
+        .status(500)
+        .json({ error: "Failed to fetch Genius page", status: pageResp.status });
+      return;
+    }
+
+    const html = await pageResp.text();
+
+    // 3) Extract <div data-lyrics-container="true"> blocks
+    const blocks = html.match(
+      /<div[^>]+data-lyrics-container="true"[^>]*>[\s\S]*?<\/div>/g
+    );
+
     if (!blocks || !blocks.length) {
-      res.status(404).json({ error: "No lyrics containers found" });
+      res.status(404).json({ error: "No lyrics containers found on page" });
       return;
     }
 
-    // Strip HTML tags and some common entities
     const decodeEntities = (str) =>
       str
         .replace(/<br\s*\/?>/gi, "\n")
@@ -35,13 +70,12 @@ module.exports = async (req, res) => {
 
     let lyrics = "";
     for (const block of blocks) {
-      // Remove tags
       const textOnly = block.replace(/<[^>]+>/g, "");
       lyrics += decodeEntities(textOnly).trim() + "\n\n";
     }
 
     if (!lyrics.trim()) {
-      res.status(404).json({ error: "Lyrics text empty after parsing" });
+      res.status(404).json({ error: "Empty lyrics after parsing" });
       return;
     }
 
