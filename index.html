@@ -248,8 +248,9 @@ async function fetchLyrics(title, artist) {
 
     const pageUrl = search.response.hits[0].result.url;
 
-    const scraped = await fetch(`/api/lyrics.js?url=${encodeURIComponent(pageUrl)}`)
+    const scraped = await fetch(`/api/lyrics?url=${encodeURIComponent(lyricPage)}`)
         .then(r => r.json());
+
 
     return scraped.lyrics || "Lyrics unavailable.";
 }
@@ -355,3 +356,4 @@ document.getElementById("queueBtn").onclick = loadQueue;
 
 </body>
 </html>
+
