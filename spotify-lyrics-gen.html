@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Spotify Lyrics Sync</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      margin: 0;
+      padding: 0;
+      background: #050816;
+      color: #e5e7eb;
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
+
+    header {
+      padding: 16px 24px;
+      background: #020617;
+      border-bottom: 1px solid #1f2937;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    header h1 {
+      font-size: 1.1rem;
+      margin: 0;
+    }
+
+    header .right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    header span {
+      font-size: 0.85rem;
+      color: #9ca3af;
+    }
+
+    main {
+      display: grid;
+      grid-template-columns: 1.1fr 2fr;
+      gap: 16px;
+      padding: 16px 24px 24px;
+      flex: 1;
+    }
+
+    @media (max-width: 900px) {
+      main {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .card {
+      background: #020617;
+      border-radius: 14px;
+      padding: 16px;
+      border: 1px solid #1f2937;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
+    }
+
+    .card h2 {
+      margin-top: 0;
+      font-size: 1rem;
+      margin-bottom: 8px;
+    }
+
+    .card small {
+      display: block;
+      margin-bottom: 8px;
+      color: #9ca3af;
+      font-size: 0.8rem;
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 220px;
+      background: #020617;
+      border-radius: 10px;
+      border: 1px solid #374151;
+      color: #e5e7eb;
+      padding: 10px;
+      resize: vertical;
+      font-family: inherit;
+      font-size: 0.9rem;
+      outline: none;
+    }
+
+    textarea:focus {
+      border-color: #22c55e;
+      box-shadow: 0 0 0 1px rgba(34, 197, 94, 0.4);
+    }
+
+    .controls {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 10px;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    button {
+      border-radius: 999px;
+      border: none;
+      padding: 8px 16px;
+      font-size: 0.9rem;
+      font-weight: 500;
+      cursor: pointer;
+      background: #22c55e;
+      color: #020617;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: transform 0.05s ease-out, box-shadow 0.05s ease-out, background 0.1s;
+      box-shadow: 0 8px 16px rgba(34, 197, 94, 0.35);
+      white-space: nowrap;
+    }
+
+    button.secondary {
+      background: transparent;
+      color: #e5e7eb;
+      border: 1px solid #374151;
+      box-shadow: none;
+    }
+
+    button:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 10px 22px rgba(34, 197, 94, 0.45);
+      background: #16a34a;
+    }
+
+    button.secondary:hover {
+      background: #111827;
+      box-shadow: none;
+    }
+
+    button:active {
+      transform: translateY(0);
+      box-shadow: 0 4px 10px rgba(34, 197, 94, 0.3);
+    }
+
+    .hint {
+      font-size: 0.8rem;
+      color: #9ca3af;
+    }
+
+    .lyrics-container {
+      position: relative;
+      height: 100%;
+    }
+
+    .lyrics-view {
+      height: 360px;
+      overflow-y: auto;
+      padding-right: 4px;
+      scroll-behavior: smooth;
+    }
+
+    .line {
+      padding: 6px 8px;
+      margin-bottom: 2px;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      cursor: pointer;
+      transition: background 0.12s, color 0.12s, transform 0.07s;
+      white-space: pre-wrap;
+    }
+
+    .line:hover {
+      background: #020617;
+      transform: translateX(1px);
+    }
+
+    .line.active {
+      background: #22c55e;
+      color: #020617;
+      font-weight: 600;
+      transform: translateX(2px);
+    }
+
+    .line.empty {
+      opacity: 0.45;
+      font-style: italic;
+      cursor: default;
+    }
+
+    .line.empty:hover {
+      transform: none;
+    }
+
+    .status {
+      margin-top: 6px;
+      font-size: 0.8rem;
+      color: #9ca3af;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .pill {
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: #0b1120;
+      border: 1px solid #1f2937;
+      font-size: 0.75rem;
+      color: #9ca3af;
+    }
+
+    .pill span {
+      color: #e5e7eb;
+      font-weight: 500;
+    }
+
+    .pill.bad {
+      border-color: #f97316;
+      color: #fed7aa;
+    }
+
+    .pill.good {
+      border-color: #22c55e;
+      color: #bbf7d0;
+    }
+
+    .song-info {
+      font-size: 0.8rem;
+      margin-top: 4px;
+      color: #9ca3af;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Spotify Lyrics Sync</h1>
+    <div class="right">
+      <span id="spotifyStatus">Not connected to Spotify</span>
+      <button id="loginBtn" type="button">Connect Spotify</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="card">
+      <h2>1. Paste your lyrics</h2>
+      <small>Each line = one lyric line. Leave blank lines for spacing.</small>
+      <textarea id="lyricsInput" placeholder="Paste your lyrics here...
+Line 1
+Line 2
+Line 3
+..."></textarea>
+
+      <div class="controls">
+        <button id="startBtn" type="button">
+          Build Lyrics View
+        </button>
+        <div class="hint">
+          <strong>Hotkeys:</strong> Space / ↓ = next • ↑ = prev (manual) • Click = jump
+        </div>
+      </div>
+
+      <div class="song-info" id="songInfo">
+        No song info yet.
+      </div>
+    </section>
+
+    <section class="card lyrics-container">
+      <h2>2. Live synced lyrics</h2>
+      <small>Play a song on any Spotify device, then record timings once.</small>
+
+      <div id="lyricsView" class="lyrics-view">
+        <!-- Generated lines go here -->
+      </div>
+
+      <div class="controls" style="margin-top: 12px;">
+        <button id="recordBtn" type="button" class="secondary">
+          Start Recording Timings
+        </button>
+        <button id="clearTimingsBtn" type="button" class="secondary">
+          Clear Timings
+        </button>
+        <div class="hint">
+          While recording: click each line as it’s sung. Then syncing is automatic.
+        </div>
+      </div>
+
+      <div class="status">
+        <div class="pill">
+          Current line: <span id="currentIndexDisplay">–</span>
+        </div>
+        <div class="pill">
+          Total lines: <span id="totalLinesDisplay">0</span>
+        </div>
+        <div class="pill" id="syncStatusPill">
+          Sync: <span>idle</span>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    /**********************
+     * CONFIG
+     **********************/
+    const CLIENT_ID = "YOUR_SPOTIFY_CLIENT_ID_HERE";
+    const REDIRECT_URI = "REDIRECT_URI_HERE"; // e.g. "http://localhost:5500/spotify-lyrics-gen.html"
+    const SCOPES = [
+      "user-read-playback-state",
+      "user-read-currently-playing"
+    ];
+
+    /**********************
+     * BASIC STATE
+     **********************/
+    const lyricsInput = document.getElementById("lyricsInput");
+    const startBtn = document.getElementById("startBtn");
+    const lyricsView = document.getElementById("lyricsView");
+    const currentIndexDisplay = document.getElementById("currentIndexDisplay");
+    const totalLinesDisplay = document.getElementById("totalLinesDisplay");
+    const spotifyStatus = document.getElementById("spotifyStatus");
+    const loginBtn = document.getElementById("loginBtn");
+    const recordBtn = document.getElementById("recordBtn");
+    const clearTimingsBtn = document.getElementById("clearTimingsBtn");
+    const syncStatusPill = document.getElementById("syncStatusPill").querySelector("span");
+    const songInfo = document.getElementById("songInfo");
+
+    let lines = [];
+    let currentIndex = -1;
+    let lineTimings = []; // ms offsets for each line
+    let accessToken = null;
+    let isRecording = false;
+    let syncInterval = null;
+
+    /**********************
+     * AUTH HELPERS
+     **********************/
+    function buildLoginUrl() {
+      const params = new URLSearchParams({
+        client_id: CLIENT_ID,
+        response_type: "token",
+        redirect_uri: REDIRECT_URI,
+        scope: SCOPES.join(" "),
+        show_dialog: "true"
+      });
+      return `https://accounts.spotify.com/authorize?${params.toString()}`;
+    }
+
+    function parseAccessTokenFromHash() {
+      if (!window.location.hash) return null;
+      const params = new URLSearchParams(window.location.hash.substring(1));
+      const token = params.get("access_token");
+      const expiresIn = params.get("expires_in");
+
+      if (token) {
+        const expiryTime = Date.now() + Number(expiresIn || 3600) * 1000;
+        localStorage.setItem("spotify_access_token", token);
+        localStorage.setItem("spotify_access_token_expiry", expiryTime.toString());
+        // Remove token from URL for cleanliness
+        window.history.replaceState({}, document.title, window.location.pathname);
+        return token;
+      }
+      return null;
+    }
+
+    function loadAccessTokenFromStorage() {
+      const token = localStorage.getItem("spotify_access_token");
+      const expiry = localStorage.getItem("spotify_access_token_expiry");
+      if (!token || !expiry) return null;
+      if (Date.now() > Number(expiry)) {
+        localStorage.removeItem("spotify_access_token");
+        localStorage.removeItem("spotify_access_token_expiry");
+        return null;
+      }
+      return token;
+    }
+
+    function updateSpotifyStatus(connected) {
+      if (connected) {
+        spotifyStatus.textContent = "Connected to Spotify";
+        spotifyStatus.classList.add("good");
+      } else {
+        spotifyStatus.textContent = "Not connected to Spotify";
+      }
+    }
+
+    /**********************
+     * SPOTIFY API CALLS
+     **********************/
+    async function fetchCurrentPlayback() {
+      if (!accessToken) return null;
+      try {
+        const res = await fetch("https://api.spotify.com/v1/me/player/currently-playing", {
+          headers: {
+            Authorization: "Bearer " + accessToken
+          }
+        });
+
+        if (res.status === 204 || res.status === 202) {
+          // No content / nothing is playing
+          return null;
+        }
+
+        if (!res.ok) {
+          console.warn("Spotify error", res.status);
+          if (res.status === 401) {
+            // token expired or invalid
+            accessToken = null;
+            updateSpotifyStatus(false);
+          }
+          return null;
+        }
+
+        const data = await res.json();
+        return data;
+      } catch (err) {
+        console.error("Error fetching playback", err);
+        return null;
+      }
+    }
+
+    /**********************
+     * LYRICS RENDERING
+     **********************/
+    function renderLyrics() {
+      const raw = lyricsInput.value.replace(/\r\n/g, "\n");
+      lines = raw.split("\n");
+      lyricsView.innerHTML = "";
+      lineTimings = new Array(lines.length).fill(null);
+
+      lines.forEach((line, index) => {
+        const div = document.createElement("div");
+        div.classList.add("line");
+        if (line.trim() === "") {
+          div.classList.add("empty");
+          div.textContent = "(blank)";
+        } else {
+          div.textContent = line;
+        }
+
+        div.dataset.index = index;
+
+        div.addEventListener("click", async () => {
+          if (isRecording) {
+            // In record mode: use current Spotify time for this line
+            const playback = await fetchCurrentPlayback();
+            if (playback && playback.progress_ms != null) {
+              lineTimings[index] = playback.progress_ms;
+              div.classList.add("active");
+              currentIndex = index;
+              updateCurrentIndexDisplay();
+            }
+          } else {
+            // Normal mode: manual jump
+            setActiveLine(index, true);
+          }
+        });
+
+        lyricsView.appendChild(div);
+      });
+
+      totalLinesDisplay.textContent = lines.length.toString();
+      currentIndex = lines.length > 0 ? 0 : -1;
+      updateActiveClasses();
+      updateCurrentIndexDisplay();
+      scrollToActive();
+    }
+
+    function updateActiveClasses() {
+      const lineDivs = lyricsView.querySelectorAll(".line");
+      lineDivs.forEach((div) => {
+        const index = parseInt(div.dataset.index, 10);
+        if (index === currentIndex) {
+          div.classList.add("active");
+        } else {
+          div.classList.remove("active");
+        }
+      });
+    }
+
+    function updateCurrentIndexDisplay() {
+      if (currentIndex < 0 || currentIndex >= lines.length) {
+        currentIndexDisplay.textContent = "–";
+      } else {
+        currentIndexDisplay.textContent = (currentIndex + 1).toString();
+      }
+    }
+
+    function scrollToActive() {
+      const active = lyricsView.querySelector(".line.active");
+      if (!active) return;
+
+      const containerRect = lyricsView.getBoundingClientRect();
+      const activeRect = active.getBoundingClientRect();
+
+      const offset = activeRect.top - containerRect.top - containerRect.height / 2 + activeRect.height / 2;
+      lyricsView.scrollTop += offset;
+    }
+
+    function setActiveLine(index, scroll = false) {
+      if (index < 0 || index >= lines.length) return;
+      currentIndex = index;
+      updateActiveClasses();
+      updateCurrentIndexDisplay();
+      if (scroll) scrollToActive();
+    }
+
+    function clearTimings() {
+      lineTimings = new Array(lines.length).fill(null);
+    }
+
+    /**********************
+     * SYNC LOGIC
+     **********************/
+    function startSyncLoop() {
+      if (syncInterval) clearInterval(syncInterval);
+      syncInterval = setInterval(async () => {
+        const playback = await fetchCurrentPlayback();
+        if (!playback || !playback.is_playing || !playback.item) {
+          syncStatusPill.textContent = "no playback";
+          return;
+        }
+
+        const track = playback.item;
+        const progressMs = playback.progress_ms || 0;
+
+        // Update song info
+        const artists = (track.artists || []).map(a => a.name).join(", ");
+        songInfo.textContent = `Now Playing: ${track.name} – ${artists} (${Math.floor(progressMs / 1000)}s)`;
+
+        // Only sync if we have at least some timings
+        if (!lineTimings.some(t => t != null)) {
+          syncStatusPill.textContent = "no timings yet";
+          return;
+        }
+
+        syncStatusPill.textContent = "syncing";
+
+        // Find last line whose timing <= current progress
+        let bestIndex = 0;
+        for (let i = 0; i < lineTimings.length; i++) {
+          const t = lineTimings[i];
+          if (t != null && t <= progressMs) {
+            bestIndex = i;
+          }
+        }
+
+        // If current line is ahead of progress and we have earlier timings,
+        // walk backwards
+        while (bestIndex > 0 && lineTimings[bestIndex] != null && lineTimings[bestIndex] > progressMs) {
+          bestIndex--;
+        }
+
+        setActiveLine(bestIndex, true);
+      }, 500); // polling every 0.5s
+    }
+
+    /**********************
+     * MANUAL NEXT/PREV
+     **********************/
+    function nextLine() {
+      if (lines.length === 0) return;
+      if (currentIndex < 0) {
+        currentIndex = 0;
+      } else if (currentIndex < lines.length - 1) {
+        currentIndex++;
+      }
+      updateActiveClasses();
+      updateCurrentIndexDisplay();
+      scrollToActive();
+    }
+
+    function prevLine() {
+      if (lines.length === 0) return;
+      if (currentIndex > 0) {
+        currentIndex--;
+        updateActiveClasses();
+        updateCurrentIndexDisplay();
+        scrollToActive();
+      }
+    }
+
+    /**********************
+     * EVENT WIRES
+     **********************/
+    // Build lyrics view
+    startBtn.addEventListener("click", () => {
+      renderLyrics();
+    });
+
+    // Spotify login
+    loginBtn.addEventListener("click", () => {
+      window.location.href = buildLoginUrl();
+    });
+
+    // Record timings toggle
+    recordBtn.addEventListener("click", () => {
+      isRecording = !isRecording;
+      if (isRecording) {
+        recordBtn.textContent = "Stop Recording Timings";
+        syncStatusPill.textContent = "recording";
+      } else {
+        recordBtn.textContent = "Start Recording Timings";
+        syncStatusPill.textContent = "idle";
+      }
+    });
+
+    clearTimingsBtn.addEventListener("click", () => {
+      clearTimings();
+      syncStatusPill.textContent = "timings cleared";
+    });
+
+    // Hotkeys
+    document.addEventListener("keydown", (event) => {
+      const tag = event.target.tagName.toLowerCase();
+      const isTyping = tag === "textarea" || tag === "input";
+
+      if (!isTyping && event.code === "Space") {
+        event.preventDefault();
+        nextLine();
+      } else if (!isTyping && event.key === "ArrowDown") {
+        event.preventDefault();
+        nextLine();
+      } else if (!isTyping && event.key === "ArrowUp") {
+        event.preventDefault();
+        prevLine();
+      }
+    });
+
+    /**********************
+     * INIT
+     **********************/
+    (function init() {
+      // 1) Check if token in URL
+      const tokenFromHash = parseAccessTokenFromHash();
+      if (tokenFromHash) {
+        accessToken = tokenFromHash;
+      } else {
+        // 2) Else load from storage
+        const tokenFromStorage = loadAccessTokenFromStorage();
+        if (tokenFromStorage) {
+          accessToken = tokenFromStorage;
+        }
+      }
+
+      updateSpotifyStatus(!!accessToken);
+
+      if (accessToken) {
+        startSyncLoop();
+      }
+
+      // If textarea has something, auto-render
+      if (lyricsInput.value.trim().length > 0) {
+        renderLyrics();
+      }
+    })();
+  </script>
+</body>
+</html>
