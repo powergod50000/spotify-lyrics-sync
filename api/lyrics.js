@@ -1,6 +1,5 @@
 // api/lyrics.js
-
-const AUDD_API_TOKEN = "f13f3510f68ecdbb925712078df293c9";
+// No API key needed for lyrics.ovh
 
 module.exports = async (req, res) => {
   try {
@@ -11,53 +10,31 @@ module.exports = async (req, res) => {
       return;
     }
 
-    const query = `${title} ${artist}`;
+    // Build lyrics.ovh endpoint
+    const url = `https://api.lyrics.ovh/v1/${encodeURIComponent(
+      artist
+    )}/${encodeURIComponent(title)}`;
 
-    // Build POST body for AudD
-    const formData = new URLSearchParams({
-      api_token: AUDD_API_TOKEN,
-      method: "findLyrics",
-      q: query,
-    });
+    const lyrResp = await fetch(url);
 
-    // Make request to AudD
-    const auddResp = await fetch("https://api.audd.io/", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      body: formData,
-    });
-
-    if (!auddResp.ok) {
-      const bodyText = await auddResp.text().catch(() => "");
-      res.status(auddResp.status).json({
-        error: "AudD request failed",
-        status: auddResp.status,
-        body: bodyText.slice(0, 300),
+    if (!lyrResp.ok) {
+      const txt = await lyrResp.text().catch(() => "");
+      res.status(lyrResp.status).json({
+        error: "lyrics.ovh request failed",
+        body: txt.slice(0, 500),
       });
       return;
     }
 
-    const auddJson = await auddResp.json();
-    const results = auddJson.result || [];
+    const data = await lyrResp.json();
 
-    if (!Array.isArray(results) || results.length === 0) {
-      res.status(404).json({ error: "No lyrics found in AudD" });
+    if (!data || !data.lyrics) {
+      res.status(404).json({ error: "No lyrics found." });
       return;
     }
 
-    const entry = results[0];
-    const lyrics = entry.lyrics;
-
-    if (!lyrics || !lyrics.trim()) {
-      res.status(404).json({ error: "Lyrics field empty in AudD result" });
-      return;
-    }
-
-    res.status(200).json({ lyrics: lyrics.trim() });
+    res.status(200).json({ lyrics: data.lyrics });
   } catch (err) {
-    console.error("AudD Lyrics API error:", err);
     res.status(500).json({
       error: "Server error",
       details: String(err),
