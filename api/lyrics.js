@@ -11,19 +11,25 @@ module.exports = async (req, res) => {
       return;
     }
 
-    // 1) Search Genius for the song
+    // 1) Search Genius
     const searchUrl =
       "https://api.genius.com/search?q=" +
       encodeURIComponent(`${title} ${artist}`);
 
     const searchResp = await fetch(searchUrl, {
-      headers: { Authorization: "Bearer " + GENIUS_TOKEN },
+      headers: {
+        Authorization: "Bearer " + GENIUS_TOKEN,
+        "User-Agent": "spotify-lyrics-sync/1.0"
+      },
     });
 
     if (!searchResp.ok) {
-      res
-        .status(500)
-        .json({ error: "Genius search failed", status: searchResp.status });
+      const bodyText = await searchResp.text().catch(() => "");
+      res.status(searchResp.status).json({
+        error: "Genius search failed",
+        status: searchResp.status,
+        body: bodyText.slice(0, 300),
+      });
       return;
     }
 
@@ -37,12 +43,18 @@ module.exports = async (req, res) => {
 
     const lyricPageUrl = hits[0].result.url;
 
-    // 2) Fetch the Genius lyrics page HTML
-    const pageResp = await fetch(lyricPageUrl);
+    // 2) Fetch the Genius lyrics page
+    const pageResp = await fetch(lyricPageUrl, {
+      headers: { "User-Agent": "spotify-lyrics-sync/1.0" },
+    });
+
     if (!pageResp.ok) {
-      res
-        .status(500)
-        .json({ error: "Failed to fetch Genius page", status: pageResp.status });
+      const bodyText = await pageResp.text().catch(() => "");
+      res.status(pageResp.status).json({
+        error: "Failed to fetch Genius page",
+        status: pageResp.status,
+        body: bodyText.slice(0, 300),
+      });
       return;
     }
 
